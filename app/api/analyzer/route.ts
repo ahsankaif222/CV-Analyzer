@@ -1,11 +1,21 @@
-import Groq from "groq-sdk";
+﻿import Groq from "groq-sdk";
 import { NextResponse } from "next/server";
 import { parsePdfFromBuffer } from "@/lib/parse-pdf";
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-
 export async function POST(request: Request) {
   try {
+    // Guard: ensure the API key is present before doing anything
+    const apiKey = process.env.GROQ_API_KEY;
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: "Server misconfiguration: GROQ_API_KEY is not set. Add it in Vercel -> Project -> Settings -> Environment Variables." },
+        { status: 500 }
+      );
+    }
+
+    // Instantiate inside the handler so a missing/bad key never crashes the module
+    const groq = new Groq({ apiKey });
+
     const formData = await request.formData();
     const file = formData.get("file") as File;
 
@@ -20,7 +30,7 @@ export async function POST(request: Request) {
 
     if (!resumeText || resumeText.trim().length < 50) {
       return NextResponse.json(
-        { error: "Could not extract text from the PDF. Please ensure it's a text-based PDF." },
+        { error: "Could not extract text from the PDF. Please ensure it is a text-based PDF, not a scanned image." },
         { status: 422 }
       );
     }
@@ -35,9 +45,9 @@ export async function POST(request: Request) {
         {
           role: "user",
           content: `Analyze the following resume and return a JSON object with exactly these fields:
-- "ats_score": integer 0–100 (ATS compatibility score)
-- "strengths": string with 3–5 key strengths, each on a new line starting with "• "
-- "suggestions": string with 3–5 prioritized improvements, each on a new line starting with "• "
+- "ats_score": integer 0-100 (ATS compatibility score)
+- "strengths": string with 3-5 key strengths, each on a new line starting with "• "
+- "suggestions": string with 3-5 prioritized improvements, each on a new line starting with "• "
 - "summary": a compelling 2-sentence executive verdict
 - "keywords_found": array of up to 8 strong keywords found in the resume
 - "keywords_missing": array of up to 5 important keywords that are missing
@@ -62,6 +72,10 @@ ${resumeText}`,
     return NextResponse.json(parsed);
   } catch (err) {
     console.error("Route error:", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    // Always return JSON — never let an HTML 500 page leak to the client
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : String(err) },
+      { status: 500 }
+    );
   }
 }
