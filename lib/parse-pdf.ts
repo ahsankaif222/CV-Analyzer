@@ -1,16 +1,12 @@
 ﻿export async function parsePdfFromBuffer(buffer: Buffer): Promise<string> {
   try {
-    // Use require() instead of dynamic import() — pdf-parse v2 ships as ESM
-    // with no .default export, so (await import(...)).default fails TypeScript.
-    // require() pulls the CJS build reliably, and serverExternalPackages in
-    // next.config.ts ensures Vercel leaves it unbundled at runtime.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const pdfParse = require("pdf-parse") as (
-      dataBuffer: Buffer,
-      options?: Record<string, unknown>
-    ) => Promise<{ text: string; numpages: number }>;
-
-    const result = await pdfParse(buffer);
+    // Dynamic named import — uses the correct pdf-parse v2 class API.
+    // Importing inside the function (not at module level) prevents any
+    // cold-start side effects from crashing the serverless function.
+    const { PDFParse } = await import("pdf-parse");
+    const parser = new PDFParse({ data: buffer });
+    const result = await parser.getText();
+    await parser.destroy();
     return result.text ?? "";
   } catch (err) {
     console.error("PDF parse error:", err);
